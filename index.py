@@ -10,6 +10,7 @@ from sklearn.metrics import classification_report, accuracy_score
 from sklearn.preprocessing import StandardScaler
 import csv
 from io import StringIO
+import uvicorn
 
 # Load environment variables
 load_dotenv()
@@ -114,6 +115,17 @@ def predict_vulnerability(city: str):
         "predictions": predictions_labels,  # Flood risk predictions for the next days
         "cross_validation_accuracy": accuracy,
     }
+
+@app.get("/current-location/")
+def get_current_location():
+    url = "https://ipinfo.io"
+    response = requests.get(url)
+    if response.status_code != 200:
+        raise HTTPException(status_code=response.status_code, detail=response.text)
+    latitude = response.json().get('loc', '').split(',')[0]
+    longitude = response.json().get('loc', '').split(',')[1]
+    return {"latitude": latitude, "longitude": longitude}
+
 @app.get("/current-weather/")
 def get_current_weather(city: str):
     url = f"https://weather.visualcrossing.com/VisualCrossingWebServices/rest/services/weatherdata/forecast?key={API_KEY}&location={city}&aggregateHours=1&shortColumnNames=true"
