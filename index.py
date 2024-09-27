@@ -13,10 +13,10 @@ import csv
 from io import StringIO
 import uvicorn
 from alert import *
+from bs4 import BeautifulSoup
 
 # Load environment variables
 load_dotenv()
-
 app = FastAPI()
 background_tasks = BackgroundTasks()
 
@@ -162,6 +162,7 @@ def get_current_weather(city: str):
         "conditions": current_conditions['conditions'],
         "wind_direction": current_conditions['wdir'],
         "cloud_cover": current_conditions['cloudcover'],
+        "wind_gust": current_conditions['wgust'],
     }
     
     return result
@@ -233,3 +234,43 @@ def get_safe_zones(lat: float, lon: float):
         return response.json()
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error fetching safe zones: {e}")
+def scrape_google_news(query):
+    """Function to scrape Google News results."""
+    url = f"https://www.google.com/search?q={query}&tbm=nws"
+    
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
+    }
+    
+    response = requests.get(url, headers=headers)
+    
+    if response.status_code != 200:
+        raise HTTPException(status_code=response.status_code, detail="Failed to fetch Google News results")
+    
+    soup = BeautifulSoup(response.text, "html.parser")
+    
+    # Find all news results
+    news_results = []
+    for item in soup.find_all('div', attrs={'class': 'SoAPf'}):
+        headline = item.find('div', attrs={'class': 'n0jPhd ynAwRc MBeuO nDgy9d'}).text
+        snippet = item.find('div', attrs={'class': 'GI74Re nDgy9d'}).text
+        source = item.find('div', attrs={'class': 'SVJrMe'}).text
+        
+        news_results.append({
+            "headline": headline,
+            "snippet": snippet,
+        })
+    
+    return news_results
+
+@app.post('/get-latest-news/')
+def get_latest_news(news: str):
+    """API endpoint to scrape Google News based on the user's preferences."""
+    try:
+        results = scrape_google_news(news)
+        if not results:
+            raise HTTPException(status_code=404, detail="No news articles found")
+        return {"news": results}
+    
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error fetching news: {e}")
