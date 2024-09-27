@@ -3,7 +3,8 @@ import requests
 import pandas as pd
 import numpy as np
 from dotenv import load_dotenv
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, BackgroundTasks
+from fastapi.middleware.cors import CORSMiddleware
 from sklearn.model_selection import train_test_split, cross_val_score
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.metrics import classification_report, accuracy_score
@@ -11,11 +12,21 @@ from sklearn.preprocessing import StandardScaler
 import csv
 from io import StringIO
 import uvicorn
+from alert import *
+from bs4 import BeautifulSoup
 
 # Load environment variables
 load_dotenv()
-
 app = FastAPI()
+background_tasks = BackgroundTasks()
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # Adjust to your frontend domain
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 API_KEY = os.getenv("VISUAL_CROSSING_API_KEY")
 
@@ -151,6 +162,7 @@ def get_current_weather(city: str):
         "conditions": current_conditions['conditions'],
         "wind_direction": current_conditions['wdir'],
         "cloud_cover": current_conditions['cloudcover'],
+        "wind_gust": current_conditions['wgust'],
     }
     
     return result
@@ -168,4 +180,97 @@ def get_weather(city: str):
     csv_reader = csv.DictReader(StringIO(csv_data))
     
     weather_data = [row for row in csv_reader]
-    return weather_data
+    return weather_data 
+
+def extract_location(description):
+    """Extract location coordinates from the description text."""
+    try:
+        place = description.split(':')[0]  # Customize based on actual feed data
+        location = geolocator.geocode(place)
+        if location:
+            return (location.latitude, location.longitude)
+    except Exception as e:
+        print(f"[{current_time()}] Error extracting location: {e}")
+    return None
+
+
+# Background task for continuously checking disaster alerts
+def run_disaster_alerts():
+    while True:
+        check_earthquakes()
+        check_tsunamis()
+        time.sleep(300)  # Check every 5 minutes
+
+
+@app.on_event("startup")
+def startup_event():
+    """Start background tasks on startup."""
+    background_tasks.add_task(run_disaster_alerts)
+
+
+@app.get("/check_disasters/")
+def check_disasters():
+    """Endpoint for manual checking of earthquakes and tsunamis."""
+    check_earthquakes()
+    check_tsunamis()
+    return {"status": "Alerts checked successfully"}
+
+@app.get("/safe-zones/")
+def get_safe_zones(lat: float, lon: float):
+    """API endpoint to return safe zones (e.g., hospitals) near a location."""
+    try:
+        # Replace the query with the proper search criteria
+        url = f"https://nominatim.openstreetmap.org/search.php?q=hospital+near+{lat},{lon}&format=jsonv2"
+        headers = {
+            "User-Agent": "DisasterPredictionApp/1.0 (your_email@example.com)"
+        }
+        response = requests.get(url, headers=headers)
+        
+        if response.status_code == 403:
+            raise HTTPException(status_code=403, detail="Access blocked: You have violated the usage policy of OSM's Nominatim service. Set a proper User-Agent or reduce request frequency.")
+        elif response.status_code != 200:
+            raise HTTPException(status_code=response.status_code, detail=response.text)
+
+        return response.json()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error fetching safe zones: {e}")
+def scrape_google_news(query):
+    """Function to scrape Google News results."""
+    url = f"https://www.google.com/search?q={query}&tbm=nws"
+    
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
+    }
+    
+    response = requests.get(url, headers=headers)
+    
+    if response.status_code != 200:
+        raise HTTPException(status_code=response.status_code, detail="Failed to fetch Google News results")
+    
+    soup = BeautifulSoup(response.text, "html.parser")
+    
+    # Find all news results
+    news_results = []
+    for item in soup.find_all('div', attrs={'class': 'SoAPf'}):
+        headline = item.find('div', attrs={'class': 'n0jPhd ynAwRc MBeuO nDgy9d'}).text
+        snippet = item.find('div', attrs={'class': 'GI74Re nDgy9d'}).text
+        source = item.find('div', attrs={'class': 'SVJrMe'}).text
+        
+        news_results.append({
+            "headline": headline,
+            "snippet": snippet,
+        })
+    
+    return news_results
+
+@app.post('/get-latest-news/')
+def get_latest_news(news: str):
+    """API endpoint to scrape Google News based on the user's preferences."""
+    try:
+        results = scrape_google_news(news)
+        if not results:
+            raise HTTPException(status_code=404, detail="No news articles found")
+        return {"news": results}
+    
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error fetching news: {e}")
