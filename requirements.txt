@@ -4,3 +4,5 @@ uvicorn
 pydantic
 python-dotenv
 gdacs-api
+scikit-learn
+pandas
