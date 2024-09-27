@@ -8,3 +8,4 @@ scikit-learn
 pandas
 geopy
 feedparser
+bs4
