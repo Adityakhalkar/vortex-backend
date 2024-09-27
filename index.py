@@ -3,7 +3,8 @@ import requests
 import pandas as pd
 import numpy as np
 from dotenv import load_dotenv
-from fastapi import FastAPI, HTTPException, BackgroundTasks, CORSMiddleware
+from fastapi import FastAPI, HTTPException, BackgroundTasks
+from fastapi.middleware.cors import CORSMiddleware
 from sklearn.model_selection import train_test_split, cross_val_score
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.metrics import classification_report, accuracy_score
