@@ -29,6 +29,7 @@ app.add_middleware(
 )
 
 API_KEY = os.getenv("VISUAL_CROSSING_API_KEY")
+SERP_API_KEY = os.getenv("SERP_API_KEY")
 
 # Function to get weather data
 def get_weather_data(city: str, days: int = 30):
@@ -234,43 +235,48 @@ def get_safe_zones(lat: float, lon: float):
         return response.json()
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error fetching safe zones: {e}")
-def scrape_google_news(query):
-    """Function to scrape Google News results."""
-    url = f"https://www.google.com/search?q={query}&tbm=nws"
-    
-    headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
+def get_natural_calamity_news(location="India", query="Latest news related to natural calamity in India"):
+    # Set up the parameters for the API request
+    params = {
+        "q": query,
+        "location": location,
+        "tbm": "nws",  # Fetches news results
+        "api_key": SERP_API_KEY
     }
-    
-    response = requests.get(url, headers=headers)
-    
-    if response.status_code != 200:
-        raise HTTPException(status_code=response.status_code, detail="Failed to fetch Google News results")
-    
-    soup = BeautifulSoup(response.text, "html.parser")
-    
-    # Find all news results
-    news_results = []
-    for item in soup.find_all('div', attrs={'class': 'SoAPf'}):
-        headline = item.find('div', attrs={'class': 'n0jPhd ynAwRc MBeuO nDgy9d'}).text
-        snippet = item.find('div', attrs={'class': 'GI74Re nDgy9d'}).text
-        source = item.find('div', attrs={'class': 'SVJrMe'}).text
-        
-        news_results.append({
-            "headline": headline,
-            "snippet": snippet,
-        })
-    
-    return news_results
+
+    # Send the request to SerpApi
+    response = requests.get("https://serpapi.com/search.json", params=params)
+
+    # Check if the request was successful
+    if response.status_code == 200:
+        data = response.json()
+
+        # Extract news articles from the response
+        news_articles = data.get('news_results', [])
+        return news_articles  # Return the list of news articles
+
+    else:
+        raise HTTPException(status_code=response.status_code, detail="Failed to fetch news")
 
 @app.post('/get-latest-news/')
-def get_latest_news(news: str):
+def get_latest_news(location: str = "India", query: str = "Latest news related to natural calamity in India"):
     """API endpoint to scrape Google News based on the user's preferences."""
     try:
-        results = scrape_google_news(news)
+        results = get_natural_calamity_news(location, query)
         if not results:
             raise HTTPException(status_code=404, detail="No news articles found")
-        return {"news": results}
-    
+        
+        # Prepare the results for the response
+        formatted_results = []
+        for index, article in enumerate(results):
+            formatted_results.append({
+                "title": article.get('title'),
+                "description": article.get('snippet', 'No description available'),
+                "link": article.get('link'),
+                "image": article.get('thumbnail', 'No image available'),
+            })
+
+        return {"news": formatted_results}
+
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error fetching news: {e}")
+        raise HTTPException(status_code=500, detail=f"Error fetching news: {str(e)}")
