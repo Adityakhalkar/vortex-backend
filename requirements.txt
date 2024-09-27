@@ -6,3 +6,5 @@ python-dotenv
 gdacs-api
 scikit-learn
 pandas
+geopy
+feedparser

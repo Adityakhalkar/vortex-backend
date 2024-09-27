@@ -128,10 +128,7 @@ def extract_location(description):
     You may need to customize this based on the actual RSS feed content.
     """
     try:
-        # Example: Extract place names and geocode them
-        # This is a simplistic approach and may need improvements
-        # depending on the format of the description.
-        place = description.split(':')[0]  # Adjust based on actual format
+        place = description.split(':')[0] 
         location = geolocator.geocode(place)
         if location:
             return (location.latitude, location.longitude)
@@ -139,14 +136,3 @@ def extract_location(description):
         print(f"[{current_time()}] Error extracting location: {e}")
     return None
 
-def main():
-    print(f"[{current_time()}] Starting Earthquake and Tsunami Alert System...")
-    while True:
-        print(f"\n[{current_time()}] 🔍 Checking for earthquake and tsunami alerts...")
-        check_earthquakes()
-        check_tsunamis()
-        print(f"[{current_time()}] ⏳ Waiting for {CHECK_INTERVAL} seconds before next check...\n")
-        time.sleep(CHECK_INTERVAL)
-
-if __name__ == "__main__":
-    main()

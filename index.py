@@ -3,7 +3,7 @@ import requests
 import pandas as pd
 import numpy as np
 from dotenv import load_dotenv
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, BackgroundTasks, CORSMiddleware
 from sklearn.model_selection import train_test_split, cross_val_score
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.metrics import classification_report, accuracy_score
@@ -11,11 +11,21 @@ from sklearn.preprocessing import StandardScaler
 import csv
 from io import StringIO
 import uvicorn
+from alert import *
 
 # Load environment variables
 load_dotenv()
 
 app = FastAPI()
+background_tasks = BackgroundTasks()
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:3000", "http://vortex-hackathon.vercel.app"],  # Adjust to your frontend domain
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 API_KEY = os.getenv("VISUAL_CROSSING_API_KEY")
 
@@ -168,4 +178,57 @@ def get_weather(city: str):
     csv_reader = csv.DictReader(StringIO(csv_data))
     
     weather_data = [row for row in csv_reader]
-    return weather_data
+    return weather_data 
+
+def extract_location(description):
+    """Extract location coordinates from the description text."""
+    try:
+        place = description.split(':')[0]  # Customize based on actual feed data
+        location = geolocator.geocode(place)
+        if location:
+            return (location.latitude, location.longitude)
+    except Exception as e:
+        print(f"[{current_time()}] Error extracting location: {e}")
+    return None
+
+
+# Background task for continuously checking disaster alerts
+def run_disaster_alerts():
+    while True:
+        check_earthquakes()
+        check_tsunamis()
+        time.sleep(300)  # Check every 5 minutes
+
+
+@app.on_event("startup")
+def startup_event():
+    """Start background tasks on startup."""
+    background_tasks.add_task(run_disaster_alerts)
+
+
+@app.get("/check_disasters/")
+def check_disasters():
+    """Endpoint for manual checking of earthquakes and tsunamis."""
+    check_earthquakes()
+    check_tsunamis()
+    return {"status": "Alerts checked successfully"}
+
+@app.get("/safe-zones/")
+def get_safe_zones(lat: float, lon: float):
+    """API endpoint to return safe zones (e.g., hospitals) near a location."""
+    try:
+        # Replace the query with the proper search criteria
+        url = f"https://nominatim.openstreetmap.org/search.php?q=hospital+near+{lat},{lon}&format=jsonv2"
+        headers = {
+            "User-Agent": "DisasterPredictionApp/1.0 (your_email@example.com)"
+        }
+        response = requests.get(url, headers=headers)
+        
+        if response.status_code == 403:
+            raise HTTPException(status_code=403, detail="Access blocked: You have violated the usage policy of OSM's Nominatim service. Set a proper User-Agent or reduce request frequency.")
+        elif response.status_code != 200:
+            raise HTTPException(status_code=response.status_code, detail=response.text)
+
+        return response.json()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error fetching safe zones: {e}")
